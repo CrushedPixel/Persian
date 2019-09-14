@@ -1,7 +1,8 @@
 package net.crushedpixel.persian;
 
+import ru.vyarus.java.generics.resolver.context.GenericsContext;
+
 import java.lang.reflect.Field;
-import java.lang.reflect.Type;
 
 class FieldAccessor implements PropertyAccessor {
 
@@ -13,8 +14,8 @@ class FieldAccessor implements PropertyAccessor {
     }
 
     @Override
-    public Type getGenericType() {
-        return this.field.getGenericType();
+    public ClassInfo getType(GenericsContext context) {
+        return new ClassInfo(context.resolveFieldClass(field), context.resolveFieldGenerics(field));
     }
 
     @Override

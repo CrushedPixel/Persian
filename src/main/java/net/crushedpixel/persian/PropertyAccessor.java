@@ -1,10 +1,10 @@
 package net.crushedpixel.persian;
 
-import java.lang.reflect.Type;
+import ru.vyarus.java.generics.resolver.context.GenericsContext;
 
 interface PropertyAccessor {
 
-    Type getGenericType();
+    ClassInfo getType(GenericsContext context);
 
     Object get(Object instance) throws Exception;
 

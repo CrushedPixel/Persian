@@ -4,12 +4,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
-import com.google.gson.reflect.TypeToken;
-import net.crushedpixel.persian.annotations.Model;
 
 import java.lang.reflect.Method;
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -20,31 +16,28 @@ class Serializer {
     private List<Object> modelObjects = new ArrayList<>();
 
     String serialize(Object obj) throws Exception {
-        if (!obj.getClass().isAnnotationPresent(Model.class)) {
-            throw new IllegalArgumentException("Object's class must have the @Model annotation");
-        }
-
         // serialize the root object
-        var root = serializeObject(obj, obj.getClass(), true);
+        var root = serializeModel(obj);
 
-        // serialize each model, adding them to a JSON array.
+        // serialize each model that is referenced by the root model,
+        // adding them to a JSON array.
         // serializing models can find new model objects to serialize,
         // so we repeat this step until all models are resolved.
         List<Object> serializedModels = new ArrayList<>();
         var modelsArr = new JsonArray();
 
-        do {
+        while (serializedModels.size() < modelObjects.size()) {
             for (var model : new ArrayList<>(modelObjects)) {
                 if (serializedModels.stream().anyMatch(m -> m == model)) continue;
 
                 JsonObject modelObj = new JsonObject();
                 modelObj.add("type", new JsonPrimitive(model.getClass().getName()));
-                modelObj.add("value", serializeInstance(model, model.getClass()));
+                modelObj.add("value", serializeModel(model));
 
                 modelsArr.add(modelObj);
                 serializedModels.add(model);
             }
-        } while (serializedModels.size() < modelObjects.size());
+        }
 
         JsonObject json = new JsonObject();
         json.add("root", root);
@@ -53,28 +46,33 @@ class Serializer {
         return json.toString();
     }
 
-    private JsonElement serializeObject(Object obj, Type genericType) throws Exception {
-        Class<?> type = TypeToken.get(genericType).getRawType();
+    /**
+     * Serializes a model object, returning its JSON representation.
+     */
+    private JsonElement serializeModel(Object obj) throws Exception {
+        // serialize each property
+        var json = new JsonObject();
 
-        // treat collections specially
-        if (Collection.class.isAssignableFrom(type)) {
-            return parseCollection((Collection<?>) obj, genericType);
+        for (var entry : properties.getAccessors(obj.getClass()).entrySet()) {
+            var name = entry.getKey();
+            var accessor = entry.getValue();
+            var serialized = serializeProperty(accessor.get(obj));
+            json.add(name, serialized);
         }
 
-        // check whether the field is of a model type
-        var isModel = type.isAnnotationPresent(Model.class);
-        return serializeObject(obj, genericType, isModel);
+        return json;
     }
 
-    private JsonElement serializeObject(Object obj, Type genericType, boolean isModel) throws Exception {
-        if (isModel) {
-            JsonObject json = new JsonObject();
-            int id = registerModel(obj);
-            json.add("id", new JsonPrimitive(id));
-            return json;
+    /**
+     * Serializes a property.
+     */
+    private JsonElement serializeProperty(Object obj) throws Exception {
+        // treat collections specially
+        if (Collection.class.isAssignableFrom(obj.getClass())) {
+            return parseCollection((Collection<?>) obj);
         }
 
-        return serializeInstance(obj, genericType);
+        return serializeObject(obj);
     }
 
     private static boolean isPrimitiveOrString(Object obj) throws Exception {
@@ -83,7 +81,11 @@ class Serializer {
         return (boolean) m.invoke(null, obj);
     }
 
-    private JsonElement serializeInstance(Object obj, Type genericType) throws Exception {
+    /**
+     * Serializes a single object. If the object is a model (i.e. non-primitive),
+     * it registers it for serialization and returns an element describing a reference to the object.
+     */
+    private JsonElement serializeObject(Object obj) throws Exception {
         if (isPrimitiveOrString(obj)) {
             var primitive = new JsonPrimitive("");
 
@@ -95,39 +97,17 @@ class Serializer {
             return primitive;
         }
 
-        // serialize each property
-        var json = new JsonObject();
-
-        for (var entry : properties.getAccessors(TypeToken.get(genericType).getRawType()).entrySet()) {
-            var name = entry.getKey();
-            var accessor = entry.getValue();
-            var serialized = serializeObject(accessor.get(obj), accessor.getGenericType());
-            json.add(name, serialized);
-        }
-
+        JsonObject json = new JsonObject();
+        int id = registerModel(obj);
+        json.add("id", new JsonPrimitive(id));
         return json;
     }
 
-    private JsonArray parseCollection(Collection<?> collection, Type genericType) throws Exception {
-        // the field is a collection.
-        // check if elements contained are models
-        boolean childrenAreModels = false;
-
-        // try to get the type of the elements contained
-        // from the collection's type arguments
-        if (!(genericType instanceof ParameterizedType)
-                || ((ParameterizedType) genericType).getActualTypeArguments().length < 1) {
-            throw new IllegalArgumentException("Can't serialize raw collections!");
-        }
-
-        var pType = (ParameterizedType) genericType;
-        var childType = TypeToken.get(pType.getActualTypeArguments()[0]).getRawType();
-        childrenAreModels = childType.isAnnotationPresent(Model.class);
-
+    private JsonArray parseCollection(Collection<?> collection) throws Exception {
         // serialize the collection
         JsonArray json = new JsonArray();
         for (Object child : collection) {
-            json.add(serializeObject(child, childType, childrenAreModels));
+            json.add(serializeProperty(child));
         }
 
         return json;

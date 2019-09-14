@@ -1,7 +1,8 @@
 package net.crushedpixel.persian;
 
+import ru.vyarus.java.generics.resolver.context.GenericsContext;
+
 import java.lang.reflect.Method;
-import java.lang.reflect.Type;
 
 class MethodAccessor implements PropertyAccessor{
 
@@ -16,8 +17,9 @@ class MethodAccessor implements PropertyAccessor{
     }
 
     @Override
-    public Type getGenericType() {
-        return this.getter.getGenericReturnType();
+    public ClassInfo getType(GenericsContext context) {
+        var m = context.method(getter);
+        return new ClassInfo(m.resolveReturnClass(), m.resolveReturnTypeGenerics());
     }
 
     @Override

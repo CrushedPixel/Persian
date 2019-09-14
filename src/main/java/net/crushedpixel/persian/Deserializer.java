@@ -5,12 +5,11 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
 import com.google.gson.reflect.TypeToken;
-import net.crushedpixel.persian.annotations.Model;
+import ru.vyarus.java.generics.resolver.GenericsResolver;
+import ru.vyarus.java.generics.resolver.context.GenericsContext;
 
 import java.lang.reflect.Constructor;
-import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
@@ -35,7 +34,7 @@ class Deserializer {
         }
 
         @Override
-        void apply(Object model) throws Exception{
+        void apply(Object model) throws Exception {
             accessor.set(target, model);
         }
     }
@@ -63,7 +62,11 @@ class Deserializer {
      */
     private Map<PropertyTarget, Integer> modelTargets = new HashMap<>();
 
+    private GenericsContext genericsContext;
+
     <T> T deserialize(String json, Class<T> clazz) throws Exception {
+        genericsContext = GenericsResolver.resolve(clazz);
+
         var parser = new JsonParser();
         var obj = parser.parse(json).getAsJsonObject();
 
@@ -140,27 +143,18 @@ class Deserializer {
             var name = entry.getKey();
             var accessor = entry.getValue();
 
-            var propType = entry.getValue().getGenericType();
-            var propClazz = TypeToken.get(propType).getRawType();
+            var propClazz = entry.getValue().getType(genericsContext);
 
+            /*
             // treat collections specially
             if (Collection.class.isAssignableFrom(propClazz)) {
                 var collection = new ArrayList<>(); // TODO: add support for more list types, sets
                 accessor.set(instance, collection);
 
-                // try to get the type of the elements contained
-                // from the collection's type arguments
-                if (!(propType instanceof ParameterizedType)
-                        || ((ParameterizedType) propType).getActualTypeArguments().length < 1) {
-                    throw new IllegalArgumentException("Can't deserialize into raw collections!");
-                }
-
-                var pType = (ParameterizedType) propType;
-                var childType = TypeToken.get(pType.getActualTypeArguments()[0]).getRawType();
-                boolean childrenAreModels = childType.isAnnotationPresent(Model.class);
-
                 // deserialize the collection
                 for (var e : obj.getAsJsonArray(name)) {
+                    // TODO: check if model reference - if not, parse the type field of the serialized element
+
                     if (childrenAreModels) {
                         var id = parseModelReference(e.getAsJsonObject());
                         modelTargets.put(new CollectionPropertyTarget(accessor, instance), id);
@@ -174,7 +168,7 @@ class Deserializer {
             }
 
             // check whether the property is a model type
-            var isModel = TypeToken.get(propType).getRawType().isAnnotationPresent(Model.class);
+            var isModel = propClazz.isAnnotationPresent(Model.class);
             if (isModel) {
                 var id = parseModelReference(obj.getAsJsonObject(name));
                 modelTargets.put(new SimplePropertyTarget(accessor, instance), id);
@@ -183,9 +177,9 @@ class Deserializer {
 
             // the property is not a model - deserialize it normally
             var prop = obj.get(name);
-            var value = parseValue(prop, propType);
+            var value = parseValue(prop, propClazz);
 
-            accessor.set(instance, value);
+            accessor.set(instance, value);*/
         }
 
         return instance;
